@@ -1,0 +1,207 @@
+# 📁 Project Structure
+
+```
+global-fintech-app/
+├── backend/
+│   ├── main.py
+│   ├── models/
+│   │   └── user.py
+│   ├── routes/
+│   │   ├── users.py
+│   │   └── transactions.py
+│   ├── services/
+│   │   └── payment_service.py
+│   └── .env
+│
+├── frontend/
+│   ├── App.js
+│   ├── screens/
+│   │   ├── HomeScreen.js
+│   │   └── LoginScreen.js
+│   ├── components/
+│   │   └── WalletCard.js
+│   ├── services/
+│   │   └── api.js
+│   └── .env
+│
+├── README.md
+└── .gitignore
+```
+
+---
+
+# 🧠 backend/main.py
+
+```python
+from fastapi import FastAPI
+from routes.users import user_router
+from routes.transactions import txn_router
+
+app = FastAPI()
+
+app.include_router(user_router, prefix="/users")
+app.include_router(txn_router, prefix="/transactions")
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to the Global Fintech API"}
+```
+
+---
+
+# 🔐 backend/routes/users.py
+
+```python
+from fastapi import APIRouter
+from pydantic import BaseModel
+import uuid
+
+user_router = APIRouter()
+users = {}
+
+class User(BaseModel):
+    id: str
+    username: str
+    email: str
+    balance: float = 0.0
+
+@user_router.post("/register")
+def register_user(username: str, email: str):
+    user_id = str(uuid.uuid4())
+    user = User(id=user_id, username=username, email=email)
+    users[user_id] = user
+    return user
+
+@user_router.get("/{user_id}")
+def get_user(user_id: str):
+    return users.get(user_id, {"error": "User not found"})
+```
+
+---
+
+# 💸 backend/routes/transactions.py
+
+```python
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import List
+
+from routes.users import users
+
+txn_router = APIRouter()
+transactions = []
+
+class Transaction(BaseModel):
+    sender: str
+    receiver: str
+    amount: float
+    note: str = ""
+
+@txn_router.post("/send")
+def send_money(txn: Transaction):
+    if txn.sender not in users or txn.receiver not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    if users[txn.sender].balance < txn.amount:
+        raise HTTPException(status_code=400, detail="Insufficient funds")
+
+    users[txn.sender].balance -= txn.amount
+    users[txn.receiver].balance += txn.amount
+    transactions.append(txn)
+    return txn
+
+@txn_router.get("/all")
+def get_all_txns():
+    return transactions
+```
+
+---
+
+# 📱 frontend/App.js
+
+```javascript
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import HomeScreen from './screens/HomeScreen';
+import LoginScreen from './screens/LoginScreen';
+
+const Stack = createStackNavigator();
+
+export default function App() {
+  return (
+    <NavigationContainer>
+      <Stack.Navigator initialRouteName="Login">
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Home" component={HomeScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+```
+
+---
+
+# 📱 frontend/screens/LoginScreen.js
+
+```javascript
+import React, { useState } from 'react';
+import { View, Text, TextInput, Button } from 'react-native';
+import axios from 'axios';
+
+export default function LoginScreen({ navigation }) {
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+
+  const register = async () => {
+    const res = await axios.post('http://localhost:8000/users/register', null, {
+      params: { username, email }
+    });
+    navigation.navigate('Home', { user: res.data });
+  };
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text>Email:</Text>
+      <TextInput value={email} onChangeText={setEmail} style={{ borderWidth: 1, padding: 8 }} />
+      <Text>Username:</Text>
+      <TextInput value={username} onChangeText={setUsername} style={{ borderWidth: 1, padding: 8 }} />
+      <Button title="Register / Login" onPress={register} />
+    </View>
+  );
+}
+```
+
+---
+
+# 🌍 frontend/screens/HomeScreen.js
+
+```javascript
+import React, { useState, useEffect } from 'react';
+import { View, Text, Button, TextInput } from 'react-native';
+import axios from 'axios';
+
+export default function HomeScreen({ route }) {
+  const { user } = route.params;
+  const [receiver, setReceiver] = useState('');
+  const [amount, setAmount] = useState('');
+
+  const sendMoney = async () => {
+    await axios.post('http://localhost:8000/transactions/send', {
+      sender: user.id,
+      receiver,
+      amount: parseFloat(amount),
+      note: 'Payment'
+    });
+    alert('Sent!');
+  };
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text>Welcome, {user.username}</Text>
+      <Text>Balance: ${user.balance.toFixed(2)}</Text>
+      <Text>Send To (User ID):</Text>
+      <TextInput value={receiver} onChangeText={setReceiver} style={{ borderWidth: 1, padding: 8 }} />
+      <Text>Amount:</Text>
+      <TextInput value={amount} onChangeText={setAmount} keyboardType="numeric" style={{ borderWidth: 1, padding: 8 }} />
+      <Button title="Send" onPress={sendMoney} />
+    </View>
